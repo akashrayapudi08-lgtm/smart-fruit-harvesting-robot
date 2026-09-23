@@ -256,6 +256,36 @@ class SmartHarvestSimulation {
             });
         }
 
+        // Dock & Charge Button
+        const btnDock = document.getElementById('btn-dock');
+        if (btnDock) {
+            btnDock.addEventListener('click', () => {
+                this.harvestFSM.transitionTo(this.harvestFSM.STATES.NAV_TO_CHARGER);
+                this.setCameraMode('CLOSE_UP');
+            });
+        }
+
+        // Working Modules 3D Showcase Buttons
+        const showcaseButtons = [
+            { id: 'btn-showcase-vision', action: () => { this.harvestFSM.showcaseVision(); this.setCameraMode('CLOSE_UP'); } },
+            { id: 'btn-showcase-arm', action: () => { this.harvestFSM.showcaseArmReach(); this.setCameraMode('ORBIT'); } },
+            { id: 'btn-showcase-cut', action: () => { this.harvestFSM.showcaseGraspAndCut(); this.setCameraMode('TOOL'); } },
+            { id: 'btn-showcase-deposit', action: () => { this.harvestFSM.showcaseHopperDeposit(); this.setCameraMode('CLOSE_UP'); } },
+            { id: 'btn-showcase-dock', action: () => { this.harvestFSM.showcaseChargingDock(); this.setCameraMode('ORBIT'); } },
+            { id: 'btn-showcase-auto', action: () => { this.harvestFSM.startAutoHarvest(); } }
+        ];
+
+        showcaseButtons.forEach(sb => {
+            const btn = document.getElementById(sb.id);
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.btn-showcase').forEach(b => b.classList.remove('active-showcase'));
+                    btn.classList.add('active-showcase');
+                    sb.action();
+                });
+            }
+        });
+
         // Speed Buttons (1x, 2x, 4x)
         ['1x', '2x', '4x'].forEach(speedStr => {
             const btn = document.getElementById(`btn-speed-${speedStr}`);
@@ -477,9 +507,27 @@ class SmartHarvestSimulation {
         this._setTxt('metric-harvested-count', data.harvestedCount);
         this._setTxt('metric-weight', `${data.totalWeightKg} kg`);
         this._setTxt('metric-rate', `${data.pickingRatePerHour} / hr`);
-        this._setTxt('metric-hopper-bar', `${data.hopperCapacityPercent}%`);
+        this._setTxt('metric-hopper-bar', `${data.hopperCapacityPercent}% (${data.hopperCount}/6)`);
         const barElem = document.getElementById('hopper-progress-bar');
         if (barElem) barElem.style.width = `${data.hopperCapacityPercent}%`;
+
+        // Battery Telemetry
+        this._setTxt('metric-battery-bar', `${data.batteryPercent}%`);
+        const batBar = document.getElementById('battery-progress-bar');
+        if (batBar) {
+            batBar.style.width = `${data.batteryPercent}%`;
+            if (data.isCharging) {
+                batBar.style.background = 'linear-gradient(90deg, #10b981, #06b6d4)';
+                this._setTxt('metric-battery-bar', `⚡ ${data.batteryPercent}% CHARGING`);
+            } else if (data.batteryPercent < 25) {
+                batBar.style.background = 'linear-gradient(90deg, #ef4444, #f59e0b)';
+            } else {
+                batBar.style.background = 'linear-gradient(90deg, #06b6d4, #10b981)';
+            }
+        }
+
+        // Depot Storage Weight
+        this._setTxt('metric-depot-weight', `${data.depotMasterWeightKg} kg`);
 
         // Robot Position & Gripper
         this._setTxt('metric-pos-x', data.robotPosition.x);

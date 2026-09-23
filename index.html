@@ -59,6 +59,9 @@
                 <button id="btn-reset" class="btn-hud btn-danger" title="Reset Field and Robot">
                     ↺ RESET
                 </button>
+                <button id="btn-dock" class="btn-hud" style="border-color: var(--accent-cyan); color: var(--accent-cyan);" title="Send Robot to Solar Charging Bin & Unload Fruit">
+                    ⚡ DOCK & CHARGE
+                </button>
 
                 <div class="speed-group">
                     <button id="btn-speed-1x" class="btn-speed active">1x</button>
@@ -110,7 +113,7 @@
 
                     <div class="metric-card full-width">
                         <div style="display: flex; justify-content: space-between;">
-                            <span class="metric-label">Hopper Bin Capacity</span>
+                            <span class="metric-label">Hopper Bin Capacity (0/6)</span>
                             <span id="metric-hopper-bar" class="metric-label" style="color: #ffffff;">0%</span>
                         </div>
                         <div class="progress-container">
@@ -118,16 +121,31 @@
                         </div>
                     </div>
 
+                    <div class="metric-card full-width">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span class="metric-label">⚡ AGV Battery (Solar Docked)</span>
+                            <span id="metric-battery-bar" class="metric-label" style="color: var(--accent-cyan); font-weight: 700;">100%</span>
+                        </div>
+                        <div class="progress-container">
+                            <div id="battery-progress-bar" class="progress-fill" style="width: 100%; background: linear-gradient(90deg, #06b6d4, #10b981);"></div>
+                        </div>
+                    </div>
+
                     <div class="metric-card">
-                        <span class="metric-label">Robot Pos (X, Z)</span>
-                        <span class="metric-val" style="font-size: 13px;">
-                            <span id="metric-pos-x">0.0</span>, <span id="metric-pos-z">-8.0</span>
-                        </span>
+                        <span class="metric-label">Depot Storage</span>
+                        <span id="metric-depot-weight" class="metric-val highlight-green">3.24 kg</span>
                     </div>
 
                     <div class="metric-card">
                         <span class="metric-label">Soft Gripper</span>
                         <span id="metric-gripper" class="metric-val" style="font-size: 14px;">100%</span>
+                    </div>
+
+                    <div class="metric-card full-width">
+                        <span class="metric-label">Robot World Coords (X, Z)</span>
+                        <span class="metric-val" style="font-size: 13px;">
+                            <span id="metric-pos-x">0.00</span> m, <span id="metric-pos-z">-8.00</span> m
+                        </span>
                     </div>
                 </div>
             </aside>
@@ -162,6 +180,66 @@
                         <option value="SUNSET">Golden Sunset (Long Shadows)</option>
                         <option value="NIGHT">Night Shift (Robot Work Lights)</option>
                     </select>
+                </div>
+
+                <!-- Working Modules 3D Showcase -->
+                <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+                    <div class="panel-header" style="border: none; padding-bottom: 4px; margin-bottom: 2px;">
+                        <h2>🎬 3D Modules Showcase</h2>
+                    </div>
+                    <p style="font-size: 10px; color: var(--text-muted); margin-bottom: 8px;">
+                        Click to demonstrate each module's 3D animation:
+                    </p>
+
+                    <div class="showcase-grid">
+                        <button id="btn-showcase-vision" class="btn-showcase" title="Demonstrate RealSense D435i + YOLOv8 Detection Lock">
+                            <span class="showcase-icon">🎥</span>
+                            <div class="showcase-info">
+                                <strong>1. AI Vision & Lock</strong>
+                                <small>RealSense D435i & 3D Targeting</small>
+                            </div>
+                        </button>
+
+                        <button id="btn-showcase-arm" class="btn-showcase" title="Demonstrate Smooth S-Curve 5-DOF Trajectory Reach">
+                            <span class="showcase-icon">🦾</span>
+                            <div class="showcase-info">
+                                <strong>2. 5-DOF Arm Reach</strong>
+                                <small>Standoff & Smooth Axial Glide</small>
+                            </div>
+                        </button>
+
+                        <button id="btn-showcase-cut" class="btn-showcase" title="Demonstrate Compliant Finger Enclose & High-Speed Cutter with Sparks">
+                            <span class="showcase-icon">✂️</span>
+                            <div class="showcase-info">
+                                <strong>3. Grasp & Stem Cutter</strong>
+                                <small>Silicone Flex & 4500 RPM Blade Sparks</small>
+                            </div>
+                        </button>
+
+                        <button id="btn-showcase-deposit" class="btn-showcase" title="Demonstrate Gravity Drop Physics & Hopper Cushion Bounce">
+                            <span class="showcase-icon">🧺</span>
+                            <div class="showcase-info">
+                                <strong>4. Hopper Gravity Drop</strong>
+                                <small>Projectile Physics & Settling Bounce</small>
+                            </div>
+                        </button>
+
+                        <button id="btn-showcase-dock" class="btn-showcase" title="Demonstrate Solar Docking Station, Inductive Charging & Fruit Unload">
+                            <span class="showcase-icon">⚡</span>
+                            <div class="showcase-info">
+                                <strong>5. Solar Charging Dock</strong>
+                                <small>Guide Rail Align, Induction & Depot</small>
+                            </div>
+                        </button>
+
+                        <button id="btn-showcase-auto" class="btn-showcase active-showcase" title="Resume Full Autonomous Harvesting Patrol">
+                            <span class="showcase-icon">🚀</span>
+                            <div class="showcase-info">
+                                <strong>Full Harvest Loop</strong>
+                                <small>Continuous Autonomous Operation</small>
+                            </div>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Manual Teleoperation Panel -->

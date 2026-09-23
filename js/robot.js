@@ -2,8 +2,14 @@
  * ROBOT 3D MODEL & MECHATRONICS ASSEMBLY
  * "Smart Fruit Harvesting Robot for Automated Fruit Picking"
  * 
- * Generates an industrial-grade 4WD Mobile Manipulator with 5-DOF Articulated Arm,
- * Soft Gripper + Oscillating Stem Cutter, Eye-in-Hand Vision Sensor, and Fruit Collection Hopper.
+ * Features:
+ * - 4WD All-Terrain AGV Chassis with Suspension Compliance & Dynamic Pitch Inertia
+ * - 5-DOF Articulated Robotic Manipulator with DH Parameter Alignment
+ * - Compliant Soft Silicone Gripper with Progressive Envelope Curving
+ * - High-Speed Oscillating Stem Cutter with Dynamic Spark Particle Burst
+ * - Physical Gravity Drop & Settling Bounce into Collection Hopper
+ * - Under-Chassis Inductive Charging Receiver with Glowing Contact Coils
+ * - Intel RealSense D435i Eye-in-Hand Vision System & 360° Rotating LiDAR Dome
  */
 
 class SmartHarvestingRobot {
@@ -11,7 +17,7 @@ class SmartHarvestingRobot {
         this.scene = scene;
         this.kinematics = kinematics;
 
-        // Root robot container
+        // Root container
         this.root = new THREE.Group();
         this.root.name = "SmartHarvestingRobot";
         this.scene.add(this.root);
@@ -33,30 +39,47 @@ class SmartHarvestingRobot {
         this.headlights = [];
         this.attachedFruit = null;
 
-        // Gripper actuation state (0 = closed, 1 = open)
-        this.gripperState = 1.0;
+        // Dynamics & Actuation
+        this.gripperState = 1.0;          // 0 = closed, 1 = open
         this.targetGripperState = 1.0;
         this.cutterSpeed = 0;
         this.isCutting = false;
+
+        // Particle System for Cutting Sparks
+        this.sparkParticles = null;
+        this.sparkPositions = null;
+        this.sparkVelocities = [];
+        this.numSparks = 24;
+
+        // Dropping Fruit Physics Array
+        this.droppingFruits = [];
+
+        // Battery & Charging State
+        this.batteryPercent = 100.0;
+        this.isCharging = false;
+        this.chargingReceiverMesh = null;
+        this.chargingReceiverGlow = null;
 
         // Chassis movement tracking
         this.chassisPosition = new THREE.Vector3(0, 0, 0);
         this.chassisRotation = 0; // Yaw in radians
         this.wheelRadius = 0.22;
+        this.lastForwardDelta = 0;
+        this.pitchInertia = 0;
 
-        // Build the complete robot
+        // Build complete robot
         this._buildMaterials();
         this._buildChassis();
         this._buildCollectionHopper();
         this._buildManipulatorArm();
         this._buildEndEffector();
+        this._buildSparkParticles();
 
         // Apply initial kinematics
         this.updateFromKinematics();
     }
 
     _buildMaterials() {
-        // Procedural Textures
         const tireTex = (typeof TextureGenerator !== 'undefined') ? TextureGenerator.createTireTreadTexture() : null;
         const hazardTex = (typeof TextureGenerator !== 'undefined') ? TextureGenerator.createHazardStripesTexture() : null;
 
@@ -99,7 +122,7 @@ class SmartHarvestingRobot {
                 roughness: 0.3
             }),
             siliconeGrip: new THREE.MeshStandardMaterial({
-                color: 0x06b6d4, // Cyan Soft Food-Grade Silicone
+                color: 0x06b6d4, // Soft Cyan Food-Grade Silicone
                 roughness: 0.6,
                 metalness: 0.1
             }),
@@ -114,20 +137,27 @@ class SmartHarvestingRobot {
                 transmission: 0.6,
                 thickness: 0.5
             }),
+            sparkMat: new THREE.PointsMaterial({
+                color: 0xfef08a,
+                size: 0.025,
+                transparent: true,
+                opacity: 0.0
+            }),
             glowGreen: new THREE.MeshBasicMaterial({ color: 0x10b981 }),
             glowBlue:  new THREE.MeshBasicMaterial({ color: 0x3b82f6 }),
             glowAmber: new THREE.MeshBasicMaterial({ color: 0xf59e0b }),
-            glowRed:   new THREE.MeshBasicMaterial({ color: 0xef4444 })
+            glowRed:   new THREE.MeshBasicMaterial({ color: 0xef4444 }),
+            glowCyan:  new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.8 })
         };
     }
 
     _buildChassis() {
         const chassisGroup = new THREE.Group();
-        chassisGroup.position.y = 0.22; // Clear of ground
+        chassisGroup.position.y = 0.22;
         this.chassis = chassisGroup;
         this.root.add(chassisGroup);
 
-        // Main chassis enclosure (Length: 1.3m, Width: 0.8m, Height: 0.32m)
+        // Main chassis enclosure (1.35m x 0.80m x 0.28m)
         const mainBoxGeo = new THREE.BoxGeometry(0.8, 0.28, 1.35);
         const mainBox = new THREE.Mesh(mainBoxGeo, this.materials.bodyYellow);
         mainBox.castShadow = true;
@@ -152,30 +182,27 @@ class SmartHarvestingRobot {
         wheelGeo.rotateZ(Math.PI / 2);
 
         const wheelOffsets = [
-            { x: -0.46, y: 0, z:  0.44 }, // Front Left
-            { x:  0.46, y: 0, z:  0.44 }, // Front Right
-            { x: -0.46, y: 0, z: -0.44 }, // Rear Left
-            { x:  0.46, y: 0, z: -0.44 }  // Rear Right
+            { x: -0.46, y: 0, z:  0.44 },
+            { x:  0.46, y: 0, z:  0.44 },
+            { x: -0.46, y: 0, z: -0.44 },
+            { x:  0.46, y: 0, z: -0.44 }
         ];
 
-        wheelOffsets.forEach((pos, idx) => {
+        wheelOffsets.forEach((pos) => {
             const wheelMesh = new THREE.Mesh(wheelGeo, this.materials.tireRubber);
             wheelMesh.castShadow = true;
             wheelMesh.position.set(pos.x, pos.y, pos.z);
 
-            // Rim center
             const rimGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.165, 16);
             rimGeo.rotateZ(Math.PI / 2);
             const rim = new THREE.Mesh(rimGeo, this.materials.wheelRim);
             wheelMesh.add(rim);
 
-            // Wheel hub nut
             const hubGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.19, 8);
             hubGeo.rotateZ(Math.PI / 2);
             const hub = new THREE.Mesh(hubGeo, this.materials.metalChrome);
             wheelMesh.add(hub);
 
-            // Suspension arm
             const suspGeo = new THREE.BoxGeometry(0.06, 0.06, 0.12);
             const susp = new THREE.Mesh(suspGeo, this.materials.bodyDark);
             susp.position.set(pos.x * 0.85, pos.y + 0.08, pos.z);
@@ -184,6 +211,20 @@ class SmartHarvestingRobot {
             chassisGroup.add(wheelMesh);
             this.wheels.push(wheelMesh);
         });
+
+        // Under-Chassis Inductive Fast-Charging Receiver Plate
+        const rxPlateGeo = new THREE.CylinderGeometry(0.24, 0.26, 0.02, 16);
+        const rxPlate = new THREE.Mesh(rxPlateGeo, this.materials.bodyDark);
+        rxPlate.position.set(0, -0.06, 0);
+        chassisGroup.add(rxPlate);
+
+        // Glowing Inductive Pickup Coil
+        const coilGeo = new THREE.RingGeometry(0.12, 0.22, 24);
+        coilGeo.rotateX(-Math.PI / 2);
+        this.chargingReceiverGlow = new THREE.Mesh(coilGeo, this.materials.glowCyan.clone());
+        this.chargingReceiverGlow.material.opacity = 0.0; // Off until docked
+        this.chargingReceiverGlow.position.set(0, -0.072, 0);
+        chassisGroup.add(this.chargingReceiverGlow);
 
         // Hazard Warning Stripe Skirts
         const stripeFront = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.06, 0.02), this.materials.hazardStripe);
@@ -207,7 +248,7 @@ class SmartHarvestingRobot {
         this.lidarDome.position.set(0, 0.42, 0.62);
         chassisGroup.add(this.lidarDome);
 
-        // Sweeping LiDAR Laser Scan Fan
+        // LiDAR Laser Scan Fan
         const fanGeo = new THREE.ConeGeometry(2.4, 0.04, 16, 1, false, 0, Math.PI * 0.7);
         fanGeo.rotateX(Math.PI / 2);
         const fanMat = new THREE.MeshBasicMaterial({
@@ -220,7 +261,7 @@ class SmartHarvestingRobot {
         this.lidarFan.position.set(0, 0.44, 0.62);
         chassisGroup.add(this.lidarFan);
 
-        // Rear Antenna Mast with Flashing Amber Safety Strobe Beacon
+        // Rear Antenna Mast with Strobe Beacon
         const antPole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.65, 8), this.materials.metalChrome);
         antPole.position.set(-0.35, 0.60, -0.60);
         chassisGroup.add(antPole);
@@ -255,27 +296,14 @@ class SmartHarvestingRobot {
             chassisGroup.add(spot.target);
             this.headlights.push(spot);
         });
-
-        // Emergency Stop Button
-        const estopBaseGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.02, 12);
-        const estopBase = new THREE.Mesh(estopBaseGeo, this.materials.bodyYellow);
-        estopBase.position.set(0.32, 0.31, -0.55);
-        chassisGroup.add(estopBase);
-
-        const estopBtnGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.025, 12);
-        const btn = new THREE.Mesh(estopBtnGeo, this.materials.glowRed);
-        btn.position.set(0.32, 0.33, -0.55);
-        chassisGroup.add(btn);
     }
 
     _buildCollectionHopper() {
-        // Rear Fruit Hopper / Basket with soft ramp
         const hopperGroup = new THREE.Group();
         hopperGroup.position.set(0, 0.31, -0.32);
         this.hopper = hopperGroup;
         this.chassis.add(hopperGroup);
 
-        // Hopper Walls (Open top container)
         const wallMat = this.materials.bodyDark;
         const hw = 0.68, hd = 0.55, hh = 0.32, wt = 0.03;
 
@@ -285,7 +313,7 @@ class SmartHarvestingRobot {
         bot.position.y = wt / 2;
         hopperGroup.add(bot);
 
-        // Cushioned interior liner (Dark green foam)
+        // Cushioned interior liner
         const linerMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.9 });
         const linerGeo = new THREE.BoxGeometry(hw - 0.04, 0.02, hd - 0.04);
         const liner = new THREE.Mesh(linerGeo, linerMat);
@@ -298,7 +326,7 @@ class SmartHarvestingRobot {
         back.position.set(0, hh / 2, -hd / 2 + wt / 2);
         hopperGroup.add(back);
 
-        // Front Wall (lower for fruit drop chute)
+        // Front Wall
         const frontGeo = new THREE.BoxGeometry(hw, hh * 0.65, wt);
         const front = new THREE.Mesh(frontGeo, wallMat);
         front.position.set(0, (hh * 0.65) / 2, hd / 2 - wt / 2);
@@ -321,9 +349,8 @@ class SmartHarvestingRobot {
     }
 
     _buildManipulatorArm() {
-        // Arm Pedestal / Turntable (Mounts near front of chassis top deck)
         const armBaseGroup = new THREE.Group();
-        armBaseGroup.position.set(0, 0.31, 0.28); // Mounted forward
+        armBaseGroup.position.set(0, 0.31, 0.28);
         this.chassis.add(armBaseGroup);
 
         // Joint 1: Turntable Base (Yaw)
@@ -341,7 +368,7 @@ class SmartHarvestingRobot {
         rotatingPlinth.position.y = 0.04;
         this.turntable.add(rotatingPlinth);
 
-        // Shoulder Yoke (Twin upright stanchions)
+        // Shoulder Yoke
         const yokeL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.16), this.materials.bodyDark);
         yokeL.position.set(-0.10, 0.16, 0);
         this.turntable.add(yokeL);
@@ -350,12 +377,11 @@ class SmartHarvestingRobot {
         yokeR.position.set(0.10, 0.16, 0);
         this.turntable.add(yokeR);
 
-        // Shoulder Joint Axis: at y = 0.45 relative to arm base
+        // Shoulder Joint Axis
         this.shoulderLink = new THREE.Group();
         this.shoulderLink.position.set(0, 0.24, 0);
         this.turntable.add(this.shoulderLink);
 
-        // Shoulder Motor Cylinders
         const shoulderActuatorGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.28, 16);
         shoulderActuatorGeo.rotateZ(Math.PI / 2);
         const shoulderActuator = new THREE.Mesh(shoulderActuatorGeo, this.materials.jointMotor);
@@ -371,13 +397,12 @@ class SmartHarvestingRobot {
         upperArmBeam.castShadow = true;
         upperArmGroup.add(upperArmBeam);
 
-        // Carbon fiber / styling side accents
         const accentGeo = new THREE.BoxGeometry(0.125, this.kinematics.links.upperArm * 0.7, 0.05);
         accentGeo.translate(0, this.kinematics.links.upperArm / 2, 0);
         const accent = new THREE.Mesh(accentGeo, this.materials.bodyDark);
         upperArmGroup.add(accent);
 
-        // Elbow Joint (at top of Upper Arm)
+        // Elbow Joint
         this.elbowLink = new THREE.Group();
         this.elbowLink.position.set(0, this.kinematics.links.upperArm, 0);
         upperArmGroup.add(this.elbowLink);
@@ -400,7 +425,7 @@ class SmartHarvestingRobot {
         const conduit = new THREE.Mesh(conduitGeo, this.materials.metalChrome);
         this.elbowLink.add(conduit);
 
-        // Wrist Joint (Pitch & Roll) at end of Forearm
+        // Wrist Joint
         this.wristLink = new THREE.Group();
         this.wristLink.position.set(0, this.kinematics.links.forearm, 0);
         this.elbowLink.add(this.wristLink);
@@ -412,27 +437,25 @@ class SmartHarvestingRobot {
     }
 
     _buildEndEffector() {
-        // End-Effector Assembly (Attached to wrist)
         this.endEffector = new THREE.Group();
         this.endEffector.position.set(0, 0.08, 0);
         this.wristLink.add(this.endEffector);
 
-        // Tool Housing / Interface Flange
+        // Tool Flange
         const flangeGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.08, 16);
         const flange = new THREE.Mesh(flangeGeo, this.materials.bodyDark);
         flange.position.y = 0.04;
         this.endEffector.add(flange);
 
-        // Eye-in-Hand RGB-D Vision Sensor (Intel RealSense D435i representation)
+        // Eye-in-Hand RGB-D Vision Sensor (Intel RealSense D435i)
         const sensorCam = new THREE.Group();
-        sensorCam.position.set(0, 0.09, 0.07); // Pointing forward along tool axis
+        sensorCam.position.set(0, 0.09, 0.07);
         this.endEffector.add(sensorCam);
 
         const camBodyGeo = new THREE.BoxGeometry(0.09, 0.03, 0.025);
         const camBody = new THREE.Mesh(camBodyGeo, this.materials.metalChrome);
         sensorCam.add(camBody);
 
-        // Dual Stereo Optical Lenses + IR Projector
         [-0.03, 0, 0.03].forEach(lx => {
             const lensGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.006, 12);
             lensGeo.rotateX(Math.PI / 2);
@@ -441,13 +464,13 @@ class SmartHarvestingRobot {
             sensorCam.add(lens);
         });
 
-        // Ring Illuminator Light for dense foliage penetration
+        // Ring Illuminator Light
         const ringLight = new THREE.PointLight(0xffffff, 0.8, 1.8);
         ringLight.position.set(0, 0.09, 0.09);
         this.endEffector.add(ringLight);
         this.endEffectorLight = ringLight;
 
-        // Oscillating Stem Cutter Blade (Stainless Steel Circular Saw / Shear)
+        // Oscillating Stem Cutter Blade
         const bladeShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 8), this.materials.metalChrome);
         bladeShaft.position.set(0, 0.16, 0.03);
         this.endEffector.add(bladeShaft);
@@ -457,26 +480,20 @@ class SmartHarvestingRobot {
         this.cutterBlade.position.set(0, 0.19, 0.03);
         this.endEffector.add(this.cutterBlade);
 
-        // Dual Soft-Gripper Fingers (Curved for gentle fruit envelope)
+        // Dual Compliant Soft Gripper Fingers
         const fingerBaseY = 0.10;
 
-        // Left Finger
         this.gripperLeft = new THREE.Group();
         this.gripperLeft.position.set(-0.045, fingerBaseY, 0);
         this.endEffector.add(this.gripperLeft);
+        this.gripperLeft.add(this._createFingerMesh(-1));
 
-        const fingerLMesh = this._createFingerMesh(-1);
-        this.gripperLeft.add(fingerLMesh);
-
-        // Right Finger
         this.gripperRight = new THREE.Group();
         this.gripperRight.position.set(0.045, fingerBaseY, 0);
         this.endEffector.add(this.gripperRight);
+        this.gripperRight.add(this._createFingerMesh(1));
 
-        const fingerRMesh = this._createFingerMesh(1);
-        this.gripperRight.add(fingerRMesh);
-
-        // Grasp center reference point (where fruit will rest)
+        // Grasp center reference point
         this.graspPoint = new THREE.Object3D();
         this.graspPoint.position.set(0, 0.18, 0);
         this.endEffector.add(this.graspPoint);
@@ -485,19 +502,16 @@ class SmartHarvestingRobot {
     _createFingerMesh(dir) {
         const fingerGroup = new THREE.Group();
 
-        // Finger bone
         const boneGeo = new THREE.BoxGeometry(0.018, 0.12, 0.024);
         boneGeo.translate(0, 0.06, 0);
         const bone = new THREE.Mesh(boneGeo, this.materials.bodyDark);
         fingerGroup.add(bone);
 
-        // Inward soft silicone contact pad
         const padGeo = new THREE.BoxGeometry(0.008, 0.10, 0.022);
         padGeo.translate(dir * -0.012, 0.06, 0);
         const pad = new THREE.Mesh(padGeo, this.materials.siliconeGrip);
         fingerGroup.add(pad);
 
-        // Curved fingertip claw
         const tipGeo = new THREE.CylinderGeometry(0.012, 0.004, 0.03, 8);
         tipGeo.translate(dir * -0.01, 0.13, 0);
         const tip = new THREE.Mesh(tipGeo, this.materials.siliconeGrip);
@@ -506,49 +520,72 @@ class SmartHarvestingRobot {
         return fingerGroup;
     }
 
-    /**
-     * Update 3D arm meshes to match Kinematics Joint Angles
-     */
+    _buildSparkParticles() {
+        const geo = new THREE.BufferGeometry();
+        this.sparkPositions = new Float32Array(this.numSparks * 3);
+
+        for (let i = 0; i < this.numSparks; i++) {
+            this.sparkPositions[i * 3 + 0] = 0;
+            this.sparkPositions[i * 3 + 1] = 0;
+            this.sparkPositions[i * 3 + 2] = 0;
+            this.sparkVelocities.push(new THREE.Vector3());
+        }
+
+        geo.setAttribute('position', new THREE.BufferAttribute(this.sparkPositions, 3));
+        this.sparkParticles = new THREE.Points(geo, this.materials.sparkMat);
+        this.scene.add(this.sparkParticles);
+    }
+
+    triggerCuttingSparks(originWorldPos) {
+        if (!this.sparkParticles) return;
+        this.materials.sparkMat.opacity = 0.95;
+
+        for (let i = 0; i < this.numSparks; i++) {
+            this.sparkPositions[i * 3 + 0] = originWorldPos.x + (Math.random() - 0.5) * 0.04;
+            this.sparkPositions[i * 3 + 1] = originWorldPos.y + (Math.random() - 0.5) * 0.04;
+            this.sparkPositions[i * 3 + 2] = originWorldPos.z + (Math.random() - 0.5) * 0.04;
+
+            this.sparkVelocities[i].set(
+                (Math.random() - 0.5) * 1.8,
+                Math.random() * 1.5 + 0.5,
+                (Math.random() - 0.5) * 1.8
+            );
+        }
+        this.sparkParticles.geometry.attributes.position.needsUpdate = true;
+    }
+
     updateFromKinematics() {
         const { theta1, theta2, theta3, theta4, theta5 } = this.kinematics.angles;
-
-        // Base Turntable: rotates around Y
         this.turntable.rotation.y = theta1;
-
-        // Shoulder: rotates around X
         this.shoulderLink.rotation.x = -theta2;
-
-        // Elbow: rotates around X
         this.elbowLink.rotation.x = -theta3;
-
-        // Wrist Pitch: rotates around X
         this.wristLink.rotation.x = -theta4;
-
-        // Wrist Roll: rotates around Y
         this.endEffector.rotation.y = theta5;
     }
 
-    /**
-     * Set target gripper open ratio (0 = fully closed, 1 = fully open)
-     */
     setGripper(openRatio) {
         this.targetGripperState = Math.max(0, Math.min(1, openRatio));
     }
 
-    /**
-     * Start/stop stem cutter blade rotation
-     */
     setCutterActive(active) {
         this.isCutting = active;
+        if (active) {
+            const cutPos = new THREE.Vector3();
+            this.cutterBlade.getWorldPosition(cutPos);
+            this.triggerCuttingSparks(cutPos);
+        }
     }
 
-    /**
-     * Attach a picked fruit to the gripper
-     */
+    setChargingState(isCharging) {
+        this.isCharging = isCharging;
+        if (this.chargingReceiverGlow) {
+            this.chargingReceiverGlow.material.opacity = isCharging ? 0.9 : 0.0;
+        }
+    }
+
     attachFruit(fruitMesh) {
         if (!fruitMesh) return;
         this.attachedFruit = fruitMesh;
-        // Reparent fruit to graspPoint
         this.scene.remove(fruitMesh);
         this.graspPoint.add(fruitMesh);
         fruitMesh.position.set(0, 0, 0);
@@ -556,50 +593,125 @@ class SmartHarvestingRobot {
     }
 
     /**
-     * Detach fruit and transfer it into the collection hopper
+     * Detach fruit and trigger realistic physical gravity drop into hopper
      */
     detachFruitToHopper() {
         if (!this.attachedFruit) return;
         const fruit = this.attachedFruit;
-        this.graspPoint.remove(fruit);
         this.attachedFruit = null;
 
-        // Add to hopper with randomized slight offset in collection basket
-        this.hopperFruits.add(fruit);
-        const rx = (Math.random() - 0.5) * 0.45;
-        const rz = (Math.random() - 0.5) * 0.35;
-        const count = this.hopperFruits.children.length;
-        const ry = Math.min(0.22, Math.floor(count / 6) * 0.08);
+        // Get world release position
+        const worldPos = new THREE.Vector3();
+        fruit.getWorldPosition(worldPos);
 
-        fruit.position.set(rx, ry, rz);
-        fruit.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+        this.graspPoint.remove(fruit);
+        this.scene.add(fruit);
+        fruit.position.copy(worldPos);
+
+        // Target resting position inside hopper (in world space)
+        const targetWorldPos = new THREE.Vector3();
+        this.hopperFruits.getWorldPosition(targetWorldPos);
+        const rx = (Math.random() - 0.5) * 0.42;
+        const rz = (Math.random() - 0.5) * 0.32;
+        const count = this.hopperFruits.children.length;
+        const ry = Math.min(0.20, Math.floor(count / 6) * 0.08);
+
+        targetWorldPos.x += rx;
+        targetWorldPos.y += ry;
+        targetWorldPos.z += rz;
+
+        // Add to active physics projectile drop
+        this.droppingFruits.push({
+            mesh: fruit,
+            pos: worldPos.clone(),
+            vel: new THREE.Vector3(
+                (targetWorldPos.x - worldPos.x) * 1.5,
+                0.2, // slight upward toss before falling
+                (targetWorldPos.z - worldPos.z) * 1.5
+            ),
+            targetY: targetWorldPos.y,
+            rx: rx,
+            ry: ry,
+            rz: rz,
+            rotSpeed: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3),
+            bounces: 0,
+            maxBounces: 2
+        });
     }
 
-    /**
-     * Update animations, wheels, gripper motion, and cutter blade
-     */
+    clearHopperFruits() {
+        while (this.hopperFruits.children.length > 0) {
+            this.hopperFruits.remove(this.hopperFruits.children[0]);
+        }
+    }
+
     update(dt = 0.016) {
-        // Animate Gripper fingers
-        const gripSpeed = 4.0;
+        // 1. Animate Compliant Soft Gripper Fingers
+        const gripSpeed = 5.2;
         this.gripperState += (this.targetGripperState - this.gripperState) * Math.min(1.0, dt * gripSpeed);
 
-        // Map gripperState (0..1) to finger angle (0.05 to 0.42 rad)
         const openAngle = 0.05 + this.gripperState * 0.38;
         this.gripperLeft.rotation.z = -openAngle;
         this.gripperRight.rotation.z = openAngle;
 
-        // Spin cutter blade when active
+        // 2. Animate Stem Cutter Blade & Sparks
         if (this.isCutting) {
-            this.cutterSpeed = Math.min(45, this.cutterSpeed + dt * 100);
+            this.cutterSpeed = Math.min(65, this.cutterSpeed + dt * 160);
             this.cutterBlade.rotation.y += this.cutterSpeed * dt;
+
+            // Continual cutting sparks while blade is active
+            if (Math.random() < 0.35) {
+                const cutPos = new THREE.Vector3();
+                this.cutterBlade.getWorldPosition(cutPos);
+                this.triggerCuttingSparks(cutPos);
+            }
         } else {
-            this.cutterSpeed = Math.max(0, this.cutterSpeed - dt * 25);
+            this.cutterSpeed = Math.max(0, this.cutterSpeed - dt * 35);
             if (this.cutterSpeed > 0) {
                 this.cutterBlade.rotation.y += this.cutterSpeed * dt;
             }
         }
 
-        // Continuous 360-degree LiDAR dome & scan fan rotation
+        // 3. Update Spark Particles
+        if (this.sparkParticles && this.materials.sparkMat.opacity > 0.02) {
+            this.materials.sparkMat.opacity -= dt * 1.8;
+            for (let i = 0; i < this.numSparks; i++) {
+                this.sparkPositions[i * 3 + 0] += this.sparkVelocities[i].x * dt;
+                this.sparkPositions[i * 3 + 1] += this.sparkVelocities[i].y * dt;
+                this.sparkPositions[i * 3 + 2] += this.sparkVelocities[i].z * dt;
+                this.sparkVelocities[i].y -= 9.8 * dt * 0.5; // gravity on sparks
+            }
+            this.sparkParticles.geometry.attributes.position.needsUpdate = true;
+        }
+
+        // 4. Update Dropping Fruit Physical Gravity & Bounce
+        for (let i = this.droppingFruits.length - 1; i >= 0; i--) {
+            const df = this.droppingFruits[i];
+            df.vel.y -= 9.8 * dt; // gravity
+            df.pos.addScaledVector(df.vel, dt);
+            df.mesh.position.copy(df.pos);
+            df.mesh.rotation.x += df.rotSpeed.x * dt;
+            df.mesh.rotation.y += df.rotSpeed.y * dt;
+
+            // Bounce on cushioned hopper floor
+            if (df.pos.y <= df.targetY) {
+                df.pos.y = df.targetY;
+                df.bounces++;
+                if (df.bounces < df.maxBounces) {
+                    df.vel.y = -df.vel.y * 0.32; // restitution dampening
+                    df.vel.x *= 0.5;
+                    df.vel.z *= 0.5;
+                } else {
+                    // Settle permanently into hopper group
+                    this.scene.remove(df.mesh);
+                    this.hopperFruits.add(df.mesh);
+                    df.mesh.position.set(df.rx, df.ry, df.rz);
+                    this.droppingFruits.splice(i, 1);
+                }
+            }
+        }
+
+        // 5. 360-degree LiDAR dome & scan fan rotation
         if (this.lidarDome) {
             this.lidarDome.rotation.y += dt * 14.0;
         }
@@ -607,7 +719,7 @@ class SmartHarvestingRobot {
             this.lidarFan.rotation.y += dt * 14.0;
         }
 
-        // Flashing amber safety strobe beacon
+        // 6. Amber Safety Strobe Beacon
         if (this.beaconLight) {
             const strobe = (Math.sin(Date.now() * 0.012) + 1) * 0.5;
             this.beaconLight.intensity = 0.3 + strobe * 1.8;
@@ -616,13 +728,24 @@ class SmartHarvestingRobot {
             }
         }
 
-        // Apply updated angles to 3D meshes
+        // 7. Battery & Charging Dynamics
+        if (this.isCharging) {
+            this.batteryPercent = Math.min(100.0, this.batteryPercent + dt * 18.0); // fast charging
+            if (this.chargingReceiverGlow) {
+                this.chargingReceiverGlow.rotation.z += dt * 3.0;
+            }
+        }
+
+        // 8. Dynamic Chassis Pitch Inertia decay
+        if (this.chassis) {
+            this.pitchInertia += (0 - this.pitchInertia) * dt * 4.0;
+            this.chassis.rotation.x = this.pitchInertia + Math.sin(this.chassisPosition.z * 10.0) * 0.008;
+        }
+
+        // 9. Update 3D Arm Mesh from Kinematics
         this.updateFromKinematics();
     }
 
-    /**
-     * Move mobile base in world space with realistic suspension bounce & wheel rotation
-     */
     drive(forwardDelta, turnDelta) {
         this.chassisRotation += turnDelta;
         this.root.rotation.y = this.chassisRotation;
@@ -631,23 +754,29 @@ class SmartHarvestingRobot {
         this.chassisPosition.addScaledVector(forwardDir, forwardDelta);
         this.root.position.copy(this.chassisPosition);
 
-        // Realistic wheel rotation proportional to distance traveled
+        // Realistic wheel rotation
         const wheelRot = forwardDelta / this.wheelRadius;
         this.wheels.forEach(w => {
             w.rotation.x += wheelRot;
         });
 
-        // Terrain suspension dynamics: subtle chassis bobbing and pitch rocking over soil ruts
+        // Pitch inertia: braking dips nose, acceleration rears nose
+        const accelDelta = forwardDelta - this.lastForwardDelta;
+        this.pitchInertia = Math.max(-0.06, Math.min(0.06, this.pitchInertia - accelDelta * 1.8));
+        this.lastForwardDelta = forwardDelta;
+
+        // Terrain suspension dynamics: subtle chassis bobbing and roll lean in turns
         if (this.chassis) {
             this.chassis.position.y = 0.22 + Math.sin(this.chassisPosition.z * 10.0) * 0.007;
-            this.chassis.rotation.x = Math.sin(this.chassisPosition.z * 10.0) * 0.010;
             this.chassis.rotation.z = -turnDelta * 2.2;
+        }
+
+        // Battery consumption while driving
+        if (!this.isCharging && Math.abs(forwardDelta) > 0.0001) {
+            this.batteryPercent = Math.max(0, this.batteryPercent - Math.abs(forwardDelta) * 0.04);
         }
     }
 
-    /**
-     * Set Status Light Color
-     */
     setStatus(state) {
         switch (state) {
             case 'HARVESTING':
@@ -658,6 +787,10 @@ class SmartHarvestingRobot {
             case 'SCANNING':
                 this.statusLight.material = this.materials.glowBlue;
                 break;
+            case 'CHARGING':
+            case 'DOCKING':
+                this.statusLight.material = this.materials.glowCyan;
+                break;
             case 'ERROR':
                 this.statusLight.material = this.materials.glowRed;
                 break;
@@ -667,9 +800,6 @@ class SmartHarvestingRobot {
         }
     }
 
-    /**
-     * Get world position of the end-effector grasp point
-     */
     getGraspWorldPosition() {
         const pos = new THREE.Vector3();
         this.graspPoint.getWorldPosition(pos);
@@ -677,7 +807,6 @@ class SmartHarvestingRobot {
     }
 }
 
-// Export for module or global use
 if (typeof module !== 'undefined') {
     module.exports = SmartHarvestingRobot;
 }

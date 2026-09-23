@@ -548,3 +548,63 @@ body, html {
     }
 }
 
+/* Working Modules Showcase Grid */
+.showcase-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+}
+
+.btn-showcase {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    background: rgba(30, 41, 59, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #ffffff;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-showcase:hover {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: var(--accent-cyan);
+    transform: translateX(3px);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.btn-showcase.active-showcase {
+    background: rgba(16, 185, 129, 0.25);
+    border-color: var(--accent-green);
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);
+}
+
+.showcase-icon {
+    font-size: 16px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.showcase-info strong {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #f8fafc;
+}
+
+.showcase-info small {
+    display: block;
+    font-size: 9.5px;
+    color: var(--text-muted);
+}
+
+

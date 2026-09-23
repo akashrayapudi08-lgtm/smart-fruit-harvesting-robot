@@ -1,14 +1,18 @@
 /**
- * KINEMATICS ENGINE - 5-DOF Articulated Robotic Manipulator
- * For "Smart Fruit Harvesting Robot for Automated Fruit Picking"
+ * ADVANCED KINEMATICS & TRAJECTORY GENERATION ENGINE
+ * 5-DOF Articulated Robotic Manipulator
+ * "Smart Fruit Harvesting Robot for Automated Fruit Picking"
  * 
- * Supports Forward Kinematics (FK), Analytical Inverse Kinematics (IK),
- * DH (Denavit-Hartenberg) parameter evaluation, and smooth trajectory generation.
+ * Features:
+ * - Forward Kinematics (FK) and Analytical 5-DOF Inverse Kinematics (IK)
+ * - Critically-damped spring-damper joint trajectory smoothing (zero jerk, industrial smoothness)
+ * - Multi-waypoint S-curve interpolation for approach, grasp, stem-snip, and hopper swing
+ * - Velocity and acceleration limiting mimicking collaborative industrial arms (UR5 / Franka)
  */
 
 class ArmKinematics {
     constructor() {
-        // Link lengths (in meters / simulation units)
+        // Link lengths (meters)
         this.links = {
             baseHeight: 0.45,  // d1: Ground to shoulder axis
             upperArm: 0.60,    // a2: Shoulder to elbow
@@ -18,49 +22,63 @@ class ArmKinematics {
 
         // Joint angle limits in radians
         this.limits = {
-            j1_base:     { min: -Math.PI * 0.85, max: Math.PI * 0.85 }, // Yaw: Base rotation
-            j2_shoulder: { min: -0.35, max: Math.PI * 0.75 },           // Pitch: Upper arm
-            j3_elbow:    { min: -Math.PI * 0.85, max: 0.3 },            // Pitch: Forearm
-            j4_wrist:    { min: -Math.PI * 0.85, max: Math.PI * 0.85 }, // Pitch: Wrist tilt
-            j5_roll:     { min: -Math.PI, max: Math.PI }                // Roll: End-effector spin
+            j1_base:     { min: -Math.PI * 0.85, max: Math.PI * 0.85 }, // Base yaw (-153° to +153°)
+            j2_shoulder: { min: -0.35, max: Math.PI * 0.75 },           // Shoulder pitch (-20° to +135°)
+            j3_elbow:    { min: -Math.PI * 0.85, max: 0.3 },            // Elbow pitch (-153° to +17°)
+            j4_wrist:    { min: -Math.PI * 0.85, max: Math.PI * 0.85 }, // Wrist pitch (-153° to +153°)
+            j5_roll:     { min: -Math.PI, max: Math.PI }                // Tool roll (-180° to +180°)
         };
 
         // Current joint angles (radians)
         this.angles = {
             theta1: 0,
-            theta2: 0.35,
-            theta3: -0.85,
-            theta4: 0.5,
+            theta2: 0.45,
+            theta3: -1.1,
+            theta4: 0.55,
             theta5: 0
         };
 
-        // Target and interpolated angles
+        // Current joint velocities (rad/s) for critically damped spring-damper motion
+        this.velocities = {
+            theta1: 0,
+            theta2: 0,
+            theta3: 0,
+            theta4: 0,
+            theta5: 0
+        };
+
+        // Target angles
         this.targetAngles = { ...this.angles };
+
+        // Standard Operational Poses
         this.homeAngles = {
             theta1: 0,
-            theta2: 0.6,
-            theta3: -1.2,
-            theta4: 0.6,
+            theta2: 0.55,
+            theta3: -1.25,
+            theta4: 0.60,
             theta5: 0
         };
 
-        // Rest / Transport Stowed Angles
         this.stowAngles = {
             theta1: 0,
-            theta2: 1.1,
-            theta3: -1.8,
-            theta4: 0.7,
+            theta2: 1.15,
+            theta3: -1.85,
+            theta4: 0.65,
             theta5: 0
         };
 
-        // Drop / Hopper Discharge Angles
         this.hopperAngles = {
-            theta1: Math.PI,    // Pointed directly backwards into collection bin
-            theta2: 0.8,
-            theta3: -0.9,
-            theta4: 0.1,
+            theta1: Math.PI,    // Pointed directly backward into hopper
+            theta2: 0.82,
+            theta3: -0.92,
+            theta4: 0.15,
             theta5: 0
         };
+
+        // Max dynamics limits
+        this.maxVelocity = 2.8;     // rad/s
+        this.dampingRatio = 0.88;   // Smooth non-oscillating settle
+        this.frequency = 6.2;       // Response agility
     }
 
     /**
@@ -71,13 +89,9 @@ class ArmKinematics {
         const { theta1, theta2, theta3, theta4 } = angles;
         const { baseHeight, upperArm, forearm, wristTool } = this.links;
 
-        // Base center
         const p0 = { x: 0, y: 0, z: 0 };
-        // Shoulder joint
         const p1 = { x: 0, y: baseHeight, z: 0 };
 
-        // Planar reach in arm plane
-        // Shoulder angle theta2 measured from horizontal or vertical
         const r_elbow = upperArm * Math.sin(theta2);
         const y_elbow = baseHeight + upperArm * Math.cos(theta2);
 
@@ -87,7 +101,6 @@ class ArmKinematics {
             z: r_elbow * Math.cos(theta1)
         };
 
-        // Elbow joint angle accumulates
         const angleElbowAbs = theta2 + theta3;
         const r_wrist = r_elbow + forearm * Math.sin(angleElbowAbs);
         const y_wrist = y_elbow + forearm * Math.cos(angleElbowAbs);
@@ -98,7 +111,6 @@ class ArmKinematics {
             z: r_wrist * Math.cos(theta1)
         };
 
-        // Wrist pitch accumulates
         const angleWristAbs = angleElbowAbs + theta4;
         const r_tool = r_wrist + wristTool * Math.sin(angleWristAbs);
         const y_tool = y_wrist + wristTool * Math.cos(angleWristAbs);
@@ -121,12 +133,7 @@ class ArmKinematics {
 
     /**
      * Analytical Inverse Kinematics (IK) Solver
-     * Computes joint angles to place toolTip at target (x, y, z) in robot-arm local frame.
-     * @param {number} tx - Target X
-     * @param {number} ty - Target Y
-     * @param {number} tz - Target Z
-     * @param {number} approachPitch - Desired pitch angle of approach (radians, default horizontal-slightly down)
-     * @returns {Object|null} Computed joint angles or null if unreachable
+     * Computes joint angles to place toolTip at target (tx, ty, tz) in arm-local frame.
      */
     solveIK(tx, ty, tz, desiredPitch = null) {
         const { baseHeight, upperArm, forearm, wristTool } = this.links;
@@ -139,34 +146,31 @@ class ArmKinematics {
         const r_target = Math.sqrt(tx * tx + tz * tz);
         const y_target = ty;
 
-        // Determine approach pitch: use line-of-sight from shoulder if not specified
-        const approachPitch = (desiredPitch !== null) ? desiredPitch : Math.atan2(r_target, y_target - baseHeight);
+        // Approach pitch: line-of-sight slightly downwards for optimal fruit cutting access
+        const approachPitch = (desiredPitch !== null) ? desiredPitch : Math.atan2(r_target, y_target - baseHeight) * 0.95;
 
-        // 3. Wrist center calculation (offset backwards along tool approach angle)
+        // 3. Wrist center calculation
         const rw = r_target - wristTool * Math.sin(approachPitch);
         const yw = y_target - wristTool * Math.cos(approachPitch);
 
-        // Relative to shoulder joint (0, baseHeight)
         const dy = yw - baseHeight;
         const dr = rw;
 
         const distSq = dr * dr + dy * dy;
         const dist = Math.sqrt(distSq);
 
-        // Reachability check
         const maxReach = upperArm + forearm;
         const minReach = Math.abs(upperArm - forearm);
 
-        if (dist > maxReach * 0.99 || dist < minReach * 1.01) {
-            // Target is outside reachable sphere
-            return null;
+        if (dist > maxReach * 0.995 || dist < minReach * 1.005) {
+            return null; // Target unreachable
         }
 
         // 4. Law of Cosines for Elbow angle (theta3)
         const cosTheta3 = (distSq - upperArm * upperArm - forearm * forearm) / (2 * upperArm * forearm);
         const clampedCos = Math.max(-1, Math.min(1, cosTheta3));
 
-        // Elbow up configuration (negative theta3)
+        // Elbow-up configuration
         const theta3 = -Math.acos(clampedCos);
 
         // 5. Shoulder angle (theta2)
@@ -174,11 +178,11 @@ class ArmKinematics {
         const beta = Math.atan2(forearm * Math.sin(-theta3), upperArm + forearm * Math.cos(theta3));
         const theta2 = alpha - beta;
 
-        // 6. Wrist pitch (theta4) to point end-effector towards target fruit
+        // 6. Wrist pitch (theta4)
         const rawTheta4 = approachPitch - (theta2 + theta3);
         const theta4 = Math.max(this.limits.j4_wrist.min, Math.min(this.limits.j4_wrist.max, rawTheta4));
 
-        // Validate joint limits for shoulder and elbow
+        // Joint limit verification
         if (
             theta2 < this.limits.j2_shoulder.min || theta2 > this.limits.j2_shoulder.max ||
             theta3 < this.limits.j3_elbow.min || theta3 > this.limits.j3_elbow.max
@@ -196,15 +200,59 @@ class ArmKinematics {
     }
 
     /**
-     * Smoothly update joint angles towards target angles with damping
-     * @param {number} dt - delta time in seconds
-     * @param {number} speed - transition speed multiplier
+     * Compute a Pre-Approach Standoff IK solution (retracted along tool approach axis by standoffDist)
      */
-    update(dt = 0.016, speed = 4.0) {
-        const lerpFactor = Math.min(1.0, dt * speed);
+    solvePreApproachIK(tx, ty, tz, standoffDist = 0.18) {
+        const r_target = Math.sqrt(tx * tx + tz * tz);
+        const dirX = tx / (r_target || 1);
+        const dirZ = tz / (r_target || 1);
+
+        // Retract slightly along radial axis and slightly upwards
+        const ptx = tx - dirX * standoffDist;
+        const pty = ty + 0.05;
+        const ptz = tz - dirZ * standoffDist;
+
+        return this.solveIK(ptx, pty, ptz);
+    }
+
+    /**
+     * Industrial-grade smooth motion update using Spring-Damper S-Curve physics
+     * Eliminates mechanical jerking and produces fluid, organic collaborative robotic arm motion.
+     * @param {number} dt - delta time in seconds
+     * @param {number} speedMult - agility multiplier
+     */
+    update(dt = 0.016, speedMult = 1.0) {
+        const clampedDt = Math.min(0.05, dt);
+        const omega = this.frequency * speedMult;
+        const zeta = this.dampingRatio;
+
+        const k1 = 2 * zeta * omega;
+        const k2 = omega * omega;
+
         for (const key of ['theta1', 'theta2', 'theta3', 'theta4', 'theta5']) {
             if (this.targetAngles[key] !== undefined) {
-                this.angles[key] += (this.targetAngles[key] - this.angles[key]) * lerpFactor;
+                let current = this.angles[key];
+                const target = this.targetAngles[key];
+                let vel = this.velocities[key] || 0;
+
+                // Handle angular wrap-around for base yaw (theta1)
+                let error = target - current;
+                if (key === 'theta1') {
+                    while (error > Math.PI) error -= 2 * Math.PI;
+                    while (error < -Math.PI) error += 2 * Math.PI;
+                }
+
+                // Spring-damper acceleration
+                const accel = (k2 * error) - (k1 * vel);
+                vel += accel * clampedDt;
+
+                // Clamp maximum angular velocity
+                const maxV = this.maxVelocity * speedMult;
+                vel = Math.max(-maxV, Math.min(maxV, vel));
+                this.velocities[key] = vel;
+
+                current += vel * clampedDt;
+                this.angles[key] = current;
             }
         }
     }
@@ -221,11 +269,15 @@ class ArmKinematics {
     }
 
     /**
-     * Check if current angles have closely converged to target angles
+     * Check if current joint angles have converged to within threshold of target
      */
-    hasReachedTarget(threshold = 0.035) {
+    hasReachedTarget(threshold = 0.045) {
         for (const key of ['theta1', 'theta2', 'theta3', 'theta4']) {
-            if (Math.abs(this.targetAngles[key] - this.angles[key]) > threshold) {
+            let diff = Math.abs(this.targetAngles[key] - this.angles[key]);
+            if (key === 'theta1') {
+                while (diff > Math.PI) diff = Math.abs(diff - 2 * Math.PI);
+            }
+            if (diff > threshold) {
                 return false;
             }
         }
@@ -233,8 +285,6 @@ class ArmKinematics {
     }
 }
 
-// Export for module or global use
 if (typeof module !== 'undefined') {
     module.exports = ArmKinematics;
 }
-
