@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Design & Development of a Smart Fruit Harvesting Robot | 3D Live Web Simulation</title>
+    <!-- Modern Robotics Dashboard Styling -->
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Three.js and OrbitControls (Local offline with CDN fallback) -->
+    <script src="js/libs/three.min.js"></script>
+    <script>
+        if (typeof THREE === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+        }
+    </script>
+    <script src="js/libs/OrbitControls.js"></script>
+    <script>
+        if (typeof THREE !== 'undefined' && typeof THREE.OrbitControls === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"><\/script>');
+        }
+    </script>
+</head>
+<body>
+    <!-- 3D WebGL Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Interactive Digital Twin HUD Overlay -->
+    <div class="hud-overlay">
+        <!-- Top Navigation Header -->
+        <header class="hud-header">
+            <div class="brand-section">
+                <div class="brand-icon">🍎</div>
+                <div class="title-box">
+                    <h1>Smart Fruit Harvesting Robot</h1>
+                    <p>Automated Orchard Picking &bull; Digital Twin 3D Simulation</p>
+                </div>
+            </div>
+
+            <div class="header-controls">
+                <!-- Camera Preset Views -->
+                <div class="cam-presets-bar">
+                    <button id="cam-orbit" class="btn-cam-preset active" title="Free Orbit View">🔄 Orbit</button>
+                    <button id="cam-closeup" class="btn-cam-preset" title="Close Action View">🎬 Close-Up</button>
+                    <button id="cam-chase" class="btn-cam-preset" title="Follow Chase View">🚜 Follow</button>
+                    <button id="cam-tool" class="btn-cam-preset" title="Eye-in-Hand Camera">👁 Eye POV</button>
+                    <button id="cam-topdown" class="btn-cam-preset" title="Top-Down Farm Aerial">🦅 Aerial</button>
+                </div>
+
+                <button id="btn-toggle-hud" class="btn-hud btn-toggle-hud" title="Toggle HUD visibility for full 3D view (Shortcut: H)">
+                    👁 HIDE HUD
+                </button>
+
+                <button id="btn-play" class="btn-hud btn-primary" title="Start / Resume Autonomous Picking">
+                    ▶ AUTO HARVEST
+                </button>
+                <button id="btn-pause" class="btn-hud" title="Pause Motion">
+                    ⏸ PAUSE
+                </button>
+                <button id="btn-reset" class="btn-hud btn-danger" title="Reset Field and Robot">
+                    ↺ RESET
+                </button>
+
+                <div class="speed-group">
+                    <button id="btn-speed-1x" class="btn-speed active">1x</button>
+                    <button id="btn-speed-2x" class="btn-speed">2x</button>
+                    <button id="btn-speed-4x" class="btn-speed">4x</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Split (Left: Telemetry & Vision, Right: Controls) -->
+        <main id="hud-body-container" class="hud-body">
+            <!-- Left Panel: AI Vision Feed & Telemetry -->
+            <aside class="hud-panel">
+                <div class="panel-header">
+                    <h2>📷 AI Vision Feed</h2>
+                    <span id="telemetry-status-badge" class="status-badge status-idle">STANDBY</span>
+                </div>
+
+                <!-- Picture-in-Picture Computer Vision Screen -->
+                <div class="vision-feed-box">
+                    <canvas id="vision-canvas"></canvas>
+                </div>
+
+                <!-- Telemetry Metrics Grid -->
+                <div class="panel-header">
+                    <h2>📊 Harvesting Telemetry</h2>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <span class="metric-label">Harvested Fruit</span>
+                        <span id="metric-harvested-count" class="metric-val highlight">0</span>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="metric-label">Yield Weight</span>
+                        <span id="metric-weight" class="metric-val highlight-green">0.00 kg</span>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="metric-label">Picking Throughput</span>
+                        <span id="metric-rate" class="metric-val">0 / hr</span>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="metric-label">Stem Cutter</span>
+                        <span id="metric-cutter" class="metric-val" style="font-size: 13px;">IDLE</span>
+                    </div>
+
+                    <div class="metric-card full-width">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span class="metric-label">Hopper Bin Capacity</span>
+                            <span id="metric-hopper-bar" class="metric-label" style="color: #ffffff;">0%</span>
+                        </div>
+                        <div class="progress-container">
+                            <div id="hopper-progress-bar" class="progress-fill"></div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="metric-label">Robot Pos (X, Z)</span>
+                        <span class="metric-val" style="font-size: 13px;">
+                            <span id="metric-pos-x">0.0</span>, <span id="metric-pos-z">-8.0</span>
+                        </span>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="metric-label">Soft Gripper</span>
+                        <span id="metric-gripper" class="metric-val" style="font-size: 14px;">100%</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Right Panel: Mission Control & Kinematics -->
+            <aside class="hud-panel">
+                <div class="panel-header">
+                    <h2>⚙ Mission Control</h2>
+                </div>
+
+                <!-- Mode Switch Tabs -->
+                <div class="tabs-group">
+                    <button id="btn-mode-auto" class="tab-btn active">AUTONOMOUS</button>
+                    <button id="btn-mode-manual" class="tab-btn">MANUAL TELEOP</button>
+                </div>
+
+                <!-- Environment & Camera Selectors -->
+                <div class="control-row">
+                    <label for="select-camera">Camera Viewpoint</label>
+                    <select id="select-camera" class="hud-select">
+                        <option value="ORBIT">Free Orbit Camera (Interactive)</option>
+                        <option value="CHASE">Robot Chase Cam (Third-Person)</option>
+                        <option value="TOOL">End-Effector POV (Eye-in-Hand)</option>
+                        <option value="TOP_DOWN">Top-Down Aerial Farm View</option>
+                    </select>
+                </div>
+
+                <div class="control-row">
+                    <label for="select-lighting">Environment & Lighting</label>
+                    <select id="select-lighting" class="hud-select">
+                        <option value="DAY">Sunlit Morning (Clear Sky)</option>
+                        <option value="SUNSET">Golden Sunset (Long Shadows)</option>
+                        <option value="NIGHT">Night Shift (Robot Work Lights)</option>
+                    </select>
+                </div>
+
+                <!-- Manual Teleoperation Panel -->
+                <div id="manual-controls-panel" style="display: none; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+                    <div class="panel-header" style="border: none; margin-bottom: 6px;">
+                        <h2>🕹 5-DOF Arm Joints</h2>
+                    </div>
+
+                    <div class="slider-item">
+                        <div class="slider-label-row">
+                            <span>J1 Turntable Base:</span>
+                            <span id="val-j1" style="color: var(--accent-cyan);">0°</span>
+                        </div>
+                        <input id="slider-j1" class="hud-slider" type="range" min="-150" max="150" value="0">
+                    </div>
+
+                    <div class="slider-item">
+                        <div class="slider-label-row">
+                            <span>J2 Shoulder Lift:</span>
+                            <span id="val-j2" style="color: var(--accent-cyan);">20°</span>
+                        </div>
+                        <input id="slider-j2" class="hud-slider" type="range" min="-20" max="130" value="20">
+                    </div>
+
+                    <div class="slider-item">
+                        <div class="slider-label-row">
+                            <span>J3 Elbow Flexion:</span>
+                            <span id="val-j3" style="color: var(--accent-cyan);">-48°</span>
+                        </div>
+                        <input id="slider-j3" class="hud-slider" type="range" min="-135" max="10" value="-48">
+                    </div>
+
+                    <div class="slider-item">
+                        <div class="slider-label-row">
+                            <span>J4 Wrist Pitch:</span>
+                            <span id="val-j4" style="color: var(--accent-cyan);">28°</span>
+                        </div>
+                        <input id="slider-j4" class="hud-slider" type="range" min="-90" max="90" value="28">
+                    </div>
+
+                    <div class="slider-item">
+                        <div class="slider-label-row">
+                            <span>J5 Wrist Roll:</span>
+                            <span id="val-j5" style="color: var(--accent-cyan);">0°</span>
+                        </div>
+                        <input id="slider-j5" class="hud-slider" type="range" min="-180" max="180" value="0">
+                    </div>
+
+                    <!-- End-Effector Controls -->
+                    <div style="display: flex; gap: 8px; margin-top: 10px;">
+                        <button id="btn-grip-open" class="btn-hud" style="flex: 1;">OPEN GRIPPER</button>
+                        <button id="btn-grip-close" class="btn-hud" style="flex: 1;">GRIP FRUIT</button>
+                    </div>
+
+                    <button id="btn-toggle-cutter" class="btn-hud" style="width: 100%; margin-top: 8px; justify-content: center;">
+                        ACTUATE STEM CUTTER
+                    </button>
+
+                    <!-- Drive Controls Guide -->
+                    <div style="margin-top: 12px; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px;">
+                        <span class="metric-label" style="margin-bottom: 6px; display: block;">Mobile AGV Navigation:</span>
+                        <div style="display: flex; gap: 6px; align-items: center; justify-content: center; font-size: 11px;">
+                            <span class="key-chip">W</span>
+                            <span class="key-chip">A</span>
+                            <span class="key-chip">S</span>
+                            <span class="key-chip">D</span>
+                            <span style="color: var(--text-muted); margin-left: 6px;">Drive Chassis</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Kinematics Angle Readout (Passive in Auto mode) -->
+                <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px;">
+                    <span class="metric-label" style="display: block; margin-bottom: 6px;">Live Kinematics Angles</span>
+                    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; font-family: var(--font-mono); font-size: 10px; text-align: center;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px;">
+                            <div style="color: var(--text-muted);">J1</div>
+                            <div id="disp-j1" style="color: var(--accent-cyan); font-weight: 700;">0°</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px;">
+                            <div style="color: var(--text-muted);">J2</div>
+                            <div id="disp-j2" style="color: var(--accent-cyan); font-weight: 700;">0°</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px;">
+                            <div style="color: var(--text-muted);">J3</div>
+                            <div id="disp-j3" style="color: var(--accent-cyan); font-weight: 700;">0°</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px;">
+                            <div style="color: var(--text-muted);">J4</div>
+                            <div id="disp-j4" style="color: var(--accent-cyan); font-weight: 700;">0°</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px;">
+                            <div style="color: var(--text-muted);">J5</div>
+                            <div id="disp-j5" style="color: var(--accent-cyan); font-weight: 700;">0°</div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- Bottom System Specifications Highlights -->
+        <footer class="hud-footer">
+            <div class="footer-features">
+                <div class="footer-item">
+                    <span class="footer-bullet"></span>
+                    <span><strong>Platform:</strong> 4WD All-Terrain AGV</span>
+                </div>
+                <div class="footer-item">
+                    <span class="footer-bullet"></span>
+                    <span><strong>Manipulator:</strong> 5-DOF Articulated Robotic Arm</span>
+                </div>
+                <div class="footer-item">
+                    <span class="footer-bullet"></span>
+                    <span><strong>End-Effector:</strong> Dual Soft-Gripper & Stem Shear</span>
+                </div>
+                <div class="footer-item">
+                    <span class="footer-bullet"></span>
+                    <span><strong>Vision System:</strong> YOLOv8 + RGB-D Intel RealSense</span>
+                </div>
+            </div>
+            <div>
+                <span style="font-family: var(--font-mono); color: var(--accent-green);">● SIMULATION ACTIVE [60 FPS]</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Application Logic Modules -->
+    <script src="js/textures.js"></script>
+    <script src="js/kinematics.js"></script>
+    <script src="js/robot.js"></script>
+    <script src="js/orchard.js"></script>
+    <script src="js/vision_hud.js"></script>
+    <script src="js/harvest_fsm.js"></script>
+    <script src="js/simulation.js"></script>
+</body>
+</html>
+
