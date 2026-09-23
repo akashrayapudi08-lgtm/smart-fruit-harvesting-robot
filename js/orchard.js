@@ -115,7 +115,7 @@ class OrchardEnvironment {
                 flatShading: true
             }),
             // Photorealistic Blushed Apple (High Specular Sheen)
-            ripeApple: new THREE.MeshStandardMaterial({
+            ripeApple: new THREE.MeshPhysicalMaterial({
                 map: this.ripeAppleTex,
                 roughness: 0.18,
                 metalness: 0.12,
@@ -509,7 +509,7 @@ class OrchardEnvironment {
         const rowOffsets = [-1.35, 1.35];
         const treeSpacingZ = 2.4;
         const numTreesPerRow = 11;
-        const startZ = -11.0;
+        const startZ = -12.0;
 
         // 1. Build Trellis rows and tree structures
         rowOffsets.forEach((rowX, rowIdx) => {
@@ -622,11 +622,19 @@ class OrchardEnvironment {
         let targetId = 1;
 
         pickingStations.forEach(sta => {
-            // Find corresponding tree
-            const tree = this.trees.find(t => 
-                Math.abs(t.z - sta.treeZ) < 0.25 && 
-                ((sta.rowSide === 'LEFT' && t.x < 0) || (sta.rowSide === 'RIGHT' && t.x > 0))
-            );
+            // Find closest tree on the specified side
+            let tree = null;
+            let minDist = Infinity;
+            this.trees.forEach(t => {
+                const isCorrectSide = (sta.rowSide === 'LEFT' && t.x < 0) || (sta.rowSide === 'RIGHT' && t.x > 0);
+                if (isCorrectSide) {
+                    const dist = Math.abs(t.z - sta.treeZ);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        tree = t;
+                    }
+                }
+            });
 
             if (!tree) return;
 
@@ -944,11 +952,13 @@ class OrchardEnvironment {
     }
 
     getNearbyHarvestableFruits(robotPos, maxDist = 2.4) {
+        const armZ = robotPos.z + 0.28;
         return this.fruits.filter(f => {
             if (f.harvested || !f.isRipe || !f.isHarvestTarget) return false;
             const wp = f.getWorldPosition();
             const d = wp.distanceTo(robotPos);
-            return d <= maxDist && Math.abs(wp.z - robotPos.z) < 1.35;
+            const dzArm = Math.abs(wp.z - armZ);
+            return d <= maxDist && dzArm < 0.85;
         });
     }
 

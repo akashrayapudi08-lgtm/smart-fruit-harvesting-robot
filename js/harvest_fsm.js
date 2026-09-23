@@ -411,7 +411,7 @@ class HarvestFSM {
      */
     showcaseVision() {
         this.isPaused = false;
-        const candidate = this.orchard.fruits.find(f => f.isHarvestTarget && !f.harvested);
+        const candidate = this.orchard.fruits.find(f => f.isHarvestTarget && !f.harvested) || this.orchard.fruits[0];
         if (candidate) {
             this.currentTarget = candidate;
             this.visionHUD.setTargetFruit(candidate);
@@ -424,26 +424,28 @@ class HarvestFSM {
         const candidate = this.orchard.fruits.find(f => f.isHarvestTarget && !f.harvested) || this.orchard.fruits[0];
         if (candidate) {
             this.currentTarget = candidate;
-            this.transitionTo(this.STATES.APPROACH_ARM);
+            this.transitionTo(this.STATES.PRE_APPROACH);
         }
     }
 
     showcaseGraspAndCut() {
         this.isPaused = false;
-        this.robot.setGripper(0.08);
-        this.transitionTo(this.STATES.CUT_STEM);
+        if (!this.currentTarget) {
+            const candidate = this.orchard.fruits.find(f => f.isHarvestTarget && !f.harvested) || this.orchard.fruits[0];
+            if (candidate) {
+                this.currentTarget = candidate;
+            }
+        }
+        this.transitionTo(this.STATES.GRASP_FRUIT);
     }
 
     showcaseHopperDeposit() {
         this.isPaused = false;
-        this.kinematics.setTargetAngles(this.kinematics.hopperAngles);
-        setTimeout(() => {
-            const fakeFruit = this.orchard.fruits.find(f => !f.harvested) || this.orchard.fruits[0];
-            if (fakeFruit) {
-                this.robot.attachFruit(fakeFruit.mesh.clone());
-                this.transitionTo(this.STATES.DEPOSIT);
-            }
-        }, 800);
+        if (!this.robot.attachedFruit) {
+            const demoFruit = this.orchard._createFruit(8888, true);
+            this.robot.attachFruit(demoFruit.mesh);
+        }
+        this.transitionTo(this.STATES.HOPPER_TRANSFER);
     }
 
     showcaseChargingDock() {

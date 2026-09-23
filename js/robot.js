@@ -131,11 +131,10 @@ class SmartHarvestingRobot {
                 metalness: 0.95,
                 roughness: 0.1
             }),
-            sensorGlass: new THREE.MeshPhysicalMaterial({
+            sensorGlass: new THREE.MeshStandardMaterial({
                 color: 0x111827,
                 roughness: 0.1,
-                transmission: 0.6,
-                thickness: 0.5
+                metalness: 0.85
             }),
             sparkMat: new THREE.PointsMaterial({
                 color: 0xfef08a,
@@ -586,56 +585,48 @@ class SmartHarvestingRobot {
     attachFruit(fruitMesh) {
         if (!fruitMesh) return;
         this.attachedFruit = fruitMesh;
-        this.scene.remove(fruitMesh);
+        if (fruitMesh.parent) {
+            fruitMesh.parent.remove(fruitMesh);
+        }
         this.graspPoint.add(fruitMesh);
         fruitMesh.position.set(0, 0, 0);
         fruitMesh.rotation.set(0, 0, 0);
     }
 
     /**
-     * Detach fruit and trigger realistic physical gravity drop into hopper
+     * Detach fruit and transfer it directly into the collection hopper with smooth drop animation
      */
     detachFruitToHopper() {
         if (!this.attachedFruit) return;
         const fruit = this.attachedFruit;
         this.attachedFruit = null;
 
-        // Get world release position
-        const worldPos = new THREE.Vector3();
-        fruit.getWorldPosition(worldPos);
+        // Reparent directly to collection hopper
+        if (fruit.parent) {
+            fruit.parent.remove(fruit);
+        }
+        this.hopperFruits.add(fruit);
 
-        this.graspPoint.remove(fruit);
-        this.scene.add(fruit);
-        fruit.position.copy(worldPos);
-
-        // Target resting position inside hopper (in world space)
-        const targetWorldPos = new THREE.Vector3();
-        this.hopperFruits.getWorldPosition(targetWorldPos);
-        const rx = (Math.random() - 0.5) * 0.42;
-        const rz = (Math.random() - 0.5) * 0.32;
+        // Neat packing calculation in hopper basket
         const count = this.hopperFruits.children.length;
-        const ry = Math.min(0.20, Math.floor(count / 6) * 0.08);
+        const col = (count - 1) % 3;                   // 0, 1, 2
+        const row = Math.floor(((count - 1) % 6) / 3); // 0, 1
+        const layer = Math.floor((count - 1) / 6);     // stacking layers
 
-        targetWorldPos.x += rx;
-        targetWorldPos.y += ry;
-        targetWorldPos.z += rz;
+        const hx = (col - 1) * 0.16 + (Math.random() - 0.5) * 0.04;
+        const hz = (row - 0.5) * 0.16 + (Math.random() - 0.5) * 0.04;
+        const targetHy = 0.05 + layer * 0.075;
 
-        // Add to active physics projectile drop
+        // Position slightly above and animate downward settling bounce
+        fruit.position.set(hx, targetHy + 0.22, hz);
+        fruit.rotation.set(Math.random() * 0.3, Math.random() * Math.PI, 0);
+
         this.droppingFruits.push({
             mesh: fruit,
-            pos: worldPos.clone(),
-            vel: new THREE.Vector3(
-                (targetWorldPos.x - worldPos.x) * 1.5,
-                0.2, // slight upward toss before falling
-                (targetWorldPos.z - worldPos.z) * 1.5
-            ),
-            targetY: targetWorldPos.y,
-            rx: rx,
-            ry: ry,
-            rz: rz,
-            rotSpeed: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3),
-            bounces: 0,
-            maxBounces: 2
+            targetY: targetHy,
+            currentY: targetHy + 0.22,
+            velY: 0,
+            bounces: 0
         });
     }
 
@@ -643,6 +634,7 @@ class SmartHarvestingRobot {
         while (this.hopperFruits.children.length > 0) {
             this.hopperFruits.remove(this.hopperFruits.children[0]);
         }
+        this.droppingFruits = [];
     }
 
     update(dt = 0.016) {
@@ -684,31 +676,24 @@ class SmartHarvestingRobot {
             this.sparkParticles.geometry.attributes.position.needsUpdate = true;
         }
 
-        // 4. Update Dropping Fruit Physical Gravity & Bounce
+        // 4. Update Dropping Fruit Settling Bounce inside hopper
         for (let i = this.droppingFruits.length - 1; i >= 0; i--) {
             const df = this.droppingFruits[i];
-            df.vel.y -= 9.8 * dt; // gravity
-            df.pos.addScaledVector(df.vel, dt);
-            df.mesh.position.copy(df.pos);
-            df.mesh.rotation.x += df.rotSpeed.x * dt;
-            df.mesh.rotation.y += df.rotSpeed.y * dt;
+            df.velY -= 9.8 * dt;
+            df.currentY += df.velY * dt;
 
-            // Bounce on cushioned hopper floor
-            if (df.pos.y <= df.targetY) {
-                df.pos.y = df.targetY;
+            if (df.currentY <= df.targetY) {
+                df.currentY = df.targetY;
                 df.bounces++;
-                if (df.bounces < df.maxBounces) {
-                    df.vel.y = -df.vel.y * 0.32; // restitution dampening
-                    df.vel.x *= 0.5;
-                    df.vel.z *= 0.5;
+                if (df.bounces < 2) {
+                    df.velY = -df.velY * 0.32; // soft foam bounce
                 } else {
-                    // Settle permanently into hopper group
-                    this.scene.remove(df.mesh);
-                    this.hopperFruits.add(df.mesh);
-                    df.mesh.position.set(df.rx, df.ry, df.rz);
+                    df.mesh.position.y = df.targetY;
                     this.droppingFruits.splice(i, 1);
+                    continue;
                 }
             }
+            df.mesh.position.y = df.currentY;
         }
 
         // 5. 360-degree LiDAR dome & scan fan rotation
