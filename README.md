@@ -1,7 +1,12 @@
 # Smart Fruit Harvesting Robot for Automated Fruit Picking
 ### 3D Live Web Simulation & Mechatronics Digital Twin
 
-A comprehensive engineering design and interactive 3D WebGL simulation of an autonomous smart fruit harvesting robot for precision orchard harvesting.
+[![Live Demo](https://img.shields.io/badge/Demo-Live%20Simulation-success?style=for-the-badge&logo=googlechrome)](https://akashrayapudi08-lgtm.github.io/smart-fruit-harvesting-robot/)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue?style=for-the-badge&logo=github)](https://github.com/akashrayapudi08-lgtm/smart-fruit-harvesting-robot)
+
+> 🌐 **Live Worldwide Web Simulation:** [https://akashrayapudi08-lgtm.github.io/smart-fruit-harvesting-robot/](https://akashrayapudi08-lgtm.github.io/smart-fruit-harvesting-robot/)
+> 
+> Anyone worldwide can open and interact with the 3D digital twin directly in modern web browsers (Chrome, Edge, Safari, Firefox) without any installation!
 
 ---
 
